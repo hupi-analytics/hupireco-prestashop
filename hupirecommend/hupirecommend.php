@@ -17,7 +17,7 @@ class HupiRecommend extends Module
     {
         $this->name = 'hupirecommend';
         $this->tab = 'analytics_stats';
-        $this->version = '1.0.0';
+        $this->version = '1.0.1';
         $this->author = 'Hupi';
         $this->need_instance = 0;
 

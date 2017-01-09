@@ -17,7 +17,7 @@ class HupiRecommend extends Module
     {
         $this->name = 'hupirecommend';
         $this->tab = 'analytics_stats';
-        $this->version = '1.0.1';
+        $this->version = '1.0.2';
         $this->author = 'Hupi';
         $this->need_instance = 0;
 
@@ -286,7 +286,11 @@ class HupiRecommend extends Module
 
     public function hookDisplayFooter()
     {
-		return '<script type="text/javascript">Hupi.addProductRecommendationClick();</script>';
+		return '<script type="text/javascript">
+                    if (typeof Hupi != "undefined") {
+                        Hupi.addProductRecommendationClick();
+                    }
+                </script>';
     }    
     
     protected function getProducts($endpoint, $nbProducts = 4, $product = null) {

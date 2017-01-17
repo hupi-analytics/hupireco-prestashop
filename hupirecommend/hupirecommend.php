@@ -13,11 +13,13 @@ if (!defined('_PS_VERSION_')) {
 
 class HupiRecommend extends Module
 {
+    protected static $recommendedProducts = array();
+
     public function __construct()
     {
         $this->name = 'hupirecommend';
         $this->tab = 'analytics_stats';
-        $this->version = '1.0.2';
+        $this->version = '1.0.3';
         $this->author = 'Hupi';
         $this->need_instance = 0;
 
@@ -43,8 +45,8 @@ class HupiRecommend extends Module
         return parent::install() &&
             $this->isParentModuleInstalled() &&
             $this->registerHook('displayFooter') &&
-			$this->registerHook('displayHomeTab') &&
-			$this->registerHook('displayHomeTabContent') &&
+            $this->registerHook('displayHomeTab') &&
+            $this->registerHook('displayHomeTabContent') &&
             $this->registerHook('productTab') &&
             $this->registerHook('productTabContent') &&
             $this->registerHook('displayShoppingCart') &&
@@ -73,9 +75,9 @@ class HupiRecommend extends Module
         $modif = '<li{if isset($id) && $id == "hupirecommend"} data-product="{$product.id_product}"{/if} ';
         return array('../themes/'._THEME_NAME_.'/product-list.tpl' =>
                             array(
-                                'before'	=> '<li ',
-                                'after'		=> $modif,
-                                'search'	=> 'li_combi_'
+                                'before'    => '<li ',
+                                'after'     => $modif,
+                                'search'    => 'li_combi_'
                             ));
     }
     
@@ -286,9 +288,16 @@ class HupiRecommend extends Module
 
     public function hookDisplayFooter()
     {
-		return '<script type="text/javascript">
+        $hupi_scripts = 'Hupi.addProductRecommendationClick();';
+
+        $products = array_unique(self::$recommendedProducts);
+        if(count($products)) {
+            $hupilytics = new Hupilytics();
+            $hupi_scripts .= $hupilytics->addProductRecommendationImpression($products);
+        }
+        return '<script type="text/javascript">
                     if (typeof Hupi != "undefined") {
-                        Hupi.addProductRecommendationClick();
+                        '.$hupi_scripts.'
                     }
                 </script>';
     }    
@@ -332,31 +341,37 @@ class HupiRecommend extends Module
             
             $jsonArray = json_decode($result, true);
             if($jsonArray['data'] && count($jsonArray['data'])) {
-                $idProducts = array_values(array_map('current',$jsonArray['data']));
-            
+                if(key(current($jsonArray['data'])) == 'idRs') {
+                    $idProducts = current(array_values(array_map('current',$jsonArray['data'])));
+
+                }
+                else {
+                    $idProducts = array_values(array_map('current',$jsonArray['data']));
+                }
+                            
                 $sql = 'SELECT p.*, product_shop.*, stock.`out_of_stock` out_of_stock, pl.`description`, pl.`description_short`,
-    						pl.`link_rewrite`, pl.`meta_description`, pl.`meta_keywords`, pl.`meta_title`, pl.`name`,
-    						p.`ean13`, p.`upc`, MAX(image_shop.`id_image`) id_image, il.`legend`
-    					FROM `'._DB_PREFIX_.'product` p
-    					LEFT JOIN `'._DB_PREFIX_.'product_lang` pl ON (
-    						p.`id_product` = pl.`id_product`
-    						AND pl.`id_lang` = '.(int)$id_lang.Shop::addSqlRestrictionOnLang('pl').'
-    					)
-    					'.Shop::addSqlAssociation('product', 'p').'
-    					LEFT JOIN `'._DB_PREFIX_.'image` i ON (i.`id_product` = p.`id_product`)'.
-            					Shop::addSqlAssociation('image', 'i', false, 'image_shop.cover=1').'
-    					LEFT JOIN `'._DB_PREFIX_.'image_lang` il ON (i.`id_image` = il.`id_image` AND il.`id_lang` = '.(int)$id_lang.')
-    					'.Product::sqlStock('p', 0).'
-    					WHERE 1
-    						AND p.`id_product` IN ('.implode(',', $idProducts).')
-    						AND product_shop.`visibility` IN ("both", "catalog")
-    						AND product_shop.`active` = 1
-    					GROUP BY product_shop.id_product
-    					ORDER BY FIELD(p.`id_product`, '.implode(',', $idProducts).')
-					    LIMIT 0, '. (int)$nbProducts;
+                            pl.`link_rewrite`, pl.`meta_description`, pl.`meta_keywords`, pl.`meta_title`, pl.`name`,
+                            p.`ean13`, p.`upc`, MAX(image_shop.`id_image`) id_image, il.`legend`
+                        FROM `'._DB_PREFIX_.'product` p
+                        LEFT JOIN `'._DB_PREFIX_.'product_lang` pl ON (
+                            p.`id_product` = pl.`id_product`
+                            AND pl.`id_lang` = '.(int)$id_lang.Shop::addSqlRestrictionOnLang('pl').'
+                        )
+                        '.Shop::addSqlAssociation('product', 'p').'
+                        LEFT JOIN `'._DB_PREFIX_.'image` i ON (i.`id_product` = p.`id_product`)'.
+                                Shop::addSqlAssociation('image', 'i', false, 'image_shop.cover=1').'
+                        LEFT JOIN `'._DB_PREFIX_.'image_lang` il ON (i.`id_image` = il.`id_image` AND il.`id_lang` = '.(int)$id_lang.')
+                        '.Product::sqlStock('p', 0).'
+                        WHERE 1
+                            AND p.`id_product` IN ('.implode(',', $idProducts).')
+                            AND product_shop.`visibility` IN ("both", "catalog")
+                            AND product_shop.`active` = 1
+                        GROUP BY product_shop.id_product
+                        ORDER BY FIELD(p.`id_product`, '.implode(',', $idProducts).')
+                        LIMIT 0, '. (int)$nbProducts;
                 
                 $result = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($sql);
-				return Product::getProductsProperties($id_lang, $result);
+                return Product::getProductsProperties($id_lang, $result);
             }
         }
         
@@ -398,8 +413,14 @@ class HupiRecommend extends Module
         
         $id_product = Tools::getValue('id_product');
         if($products = $this->getProducts(Configuration::get('HUPIRECO_PROD_ENDPOINT'), $nbProd, $id_product)) {
-            $this->smarty->assign('products', $products);
+            $this->smarty->assign(array(
+                'products' => $products,
+                'endpoint' => Configuration::get('HUPIRECO_PROD_ENDPOINT')
+            ));
             
+            foreach ($products as $product) {
+                self::$recommendedProducts[] = $product['id_product'];
+            }
             if (version_compare(_PS_VERSION_, '1.6', '>=') && !(bool)Configuration::get('HUPIRECO_PROD_HASTAB')) {
                 return $this->display(__FILE__, 'tab-content.tpl');
             } else {
@@ -437,8 +458,14 @@ class HupiRecommend extends Module
         }
         
         if($products = $this->getProducts(Configuration::get('HUPIRECO_HP_ENDPOINT'), $nbProd)) {
-            $this->smarty->assign('products', $products);
+            $this->smarty->assign(array(
+                'products' => $products,
+                'endpoint' => Configuration::get('HUPIRECO_HP_ENDPOINT')
+            ));
             
+            foreach ($products as $product) {
+                self::$recommendedProducts[] = $product['id_product'];
+            }
             return $this->display(__FILE__, 'home-tab-content.tpl');
         }
     }
@@ -466,8 +493,14 @@ class HupiRecommend extends Module
         }
         
         if($products = $this->getProducts(Configuration::get('HUPIRECO_PROD_ENDPOINT'), $nbProd, $id_product)) {
-            $this->smarty->assign('products', $products);
+            $this->smarty->assign(array(
+                'products' => $products,
+                'endpoint' => Configuration::get('HUPIRECO_PROD_ENDPOINT')
+            ));
         
+            foreach ($products as $product) {
+                self::$recommendedProducts[] = $product['id_product'];
+            }
             return $this->display(__FILE__, 'display-recommendation.tpl');
         }
         return ;
@@ -487,8 +520,14 @@ class HupiRecommend extends Module
         
         if($products = $this->getProducts(Configuration::get('HUPIRECO_CART_ENDPOINT'), $nbProd)) {
             $this->context->controller->addCss(_THEME_CSS_DIR_.'product_list.css', 'all');
-            $this->smarty->assign('products', $products);
+            $this->smarty->assign(array(
+                'products' => $products,
+                'endpoint' => Configuration::get('HUPIRECO_CART_ENDPOINT')
+            ));
     
+            foreach ($products as $product) {
+                self::$recommendedProducts[] = $product['id_product'];
+            }
             return $this->display(__FILE__, 'shopping-cart.tpl');
         }
         

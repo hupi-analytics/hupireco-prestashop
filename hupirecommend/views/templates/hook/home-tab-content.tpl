@@ -7,5 +7,7 @@
 *}
 
 {if isset($products) && $products}
+<div data-endpoint="{$endpoint}">
 {include file="$tpl_dir./product-list.tpl" class='hupirecommend tab-pane' id='hupirecommend'}
+</div>
 {/if}
